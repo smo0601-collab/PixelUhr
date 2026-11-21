@@ -6,7 +6,7 @@ ESP32-Uhr für WS2812B/NeoPixel-LED-Matrizen (Standard 32×8) mit moderner, deut
 Weboberfläche: Uhrzeit, Datum, Wetter mit Symbolen, frei konfigurierbare Lauftexte, Termine mit
 Countdown, Feiertage, Wecker mit Summer, Nachrichten und vieles mehr.
 
-Firmware-Version: `1.0.2` · Weboberflächen-Version: `1.0.0`
+Firmware-Version: `1.0.3` · Weboberflächen-Version: `1.0.0`
 
 PixelUhr basiert auf [PixelClock](https://github.com/mBlinkii/PixelClock) (MIT-Lizenz) und
 erweitert es um die unten beschriebenen Funktionen.
@@ -142,7 +142,7 @@ userdata  0x3F0000   64 KB  Lauftexte, Termine, Wecker, Extras
 
 ### Weg A: fertiges Komplett-Image (am einfachsten)
 
-Die Datei `pixeluhr-komplett-v1.0.2.bin` enthält Bootloader, Partitionstabelle und Firmware
+Die Datei `pixeluhr-komplett-v1.0.3.bin` enthält Bootloader, Partitionstabelle und Firmware
 (mit Weboberfläche). Sie wird ab Adresse `0x0` geschrieben.
 
 - **Im Browser (Chrome/Edge):** [ESP Tool](https://espressif.github.io/esptool-js/) öffnen, *Connect*,
@@ -152,7 +152,7 @@ Die Datei `pixeluhr-komplett-v1.0.2.bin` enthält Bootloader, Partitionstabelle 
 
   ```bash
   esptool.py --chip esp32 --baud 460800 erase_flash
-  esptool.py --chip esp32 --baud 460800 write_flash 0x0 pixeluhr-komplett-v1.0.2.bin
+  esptool.py --chip esp32 --baud 460800 write_flash 0x0 pixeluhr-komplett-v1.0.3.bin
   ```
 
 ### Weg B: Arduino IDE (2.x)
@@ -195,11 +195,13 @@ Unter Windows gibt es dafür die Hilfsskripte `build-pixeluhr.cmd`, `flash-pixel
    und eine sechsstellige Kennung.
 2. Am Handy das WLAN **`PixelUhr-Setup-XXXXXX`** wählen. Es ist **offen, ein Passwort ist nicht nötig**.
    Die Einrichtungsseite öffnet sich meist von selbst, sonst `http://192.168.4.1` aufrufen.
-3. Der Assistent fragt WLAN, Standort und ein eigenes Admin-Passwort ab. Eine Anmeldung ist dabei nicht nötig.
+3. Der Assistent fragt WLAN, Standort und optional ein Admin-Passwort ab. Eine Anmeldung ist dabei nicht nötig.
 4. Nach dem Neustart ist die Uhr im Heimnetz unter **`http://pixeluhr.local`** erreichbar
    (oder über die IP-Adresse aus dem Router). Benutzer `admin`, Passwort aus dem Assistenten.
 
-Der Werkszugang `admin` / `pixeluhr` gilt nur für neue Uhren und wird als neues Passwort nicht akzeptiert.
+Ab Werk gilt **Benutzer `admin` ohne Passwort**: Auf der Anmeldeseite das Passwortfeld einfach leer lassen.
+Unter **WLAN & Zugang → Admin-Zugriff** lässt sich jederzeit ein Passwort (8–64 Zeichen) setzen und mit
+„Kein Passwort verwenden“ wieder entfernen. Ohne Passwort kann jeder in deinem WLAN die Uhr bedienen.
 Wer möchte, vergibt unter **WLAN & Zugang → Setup-WLAN** ein Passwort für das Setup-WLAN.
 
 ## Bedienung

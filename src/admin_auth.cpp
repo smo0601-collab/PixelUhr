@@ -77,8 +77,8 @@ bool adminPasswordIsDefault() {
   return config.adminPasswordHash.isEmpty();
 }
 
-// Stores a new admin password. The factory default is kept as "no hash" so the
-// UI can keep reminding the owner to change it.
+// Stores a new admin password. An empty password (the factory default) is kept
+// as "no hash": then the admin user logs in without a password.
 bool setAdminPassword(const String &password) {
   StateLock lock;
   invalidateAdminAuthCache();
@@ -291,10 +291,6 @@ void handleRecoveryFinish(AsyncWebServerRequest *request) {
   }
   if (password.length() > MAX_ADMIN_PASSWORD_LENGTH) {
     sendJsonError(request, 400, "Das Admin-Passwort darf höchstens 64 Zeichen lang sein.");
-    return;
-  }
-  if (password == DEFAULT_ADMIN_PASSWORD) {
-    sendJsonError(request, 400, "Bitte ein anderes Passwort als das Standardpasswort wählen.");
     return;
   }
   String code = postParam(request, "code");

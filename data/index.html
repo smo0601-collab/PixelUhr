@@ -1032,7 +1032,11 @@
                   <input id="adminPassword" name="adminPassword" type="password" minlength="8" maxlength="64" autocomplete="new-password" placeholder="Leer lassen zum Beibehalten" data-reveal>
                 </label>
               </div>
-              <p class="hint">8 bis 64 Zeichen. Nach dem Speichern bleibst du mit den neuen Daten angemeldet.</p>
+              <div class="switchList">
+                <label class="check"><input id="adminPasswordClear" type="checkbox">Kein Passwort verwenden (Anmeldung nur mit dem Benutzernamen)</label>
+              </div>
+              <p id="adminPasswordState" class="hint" data-no-i18n></p>
+              <p class="hint">Passwort: 8 bis 64 Zeichen oder leer. Ohne Passwort kann jeder in deinem WLAN die Uhr bedienen. Nach dem Speichern bleibst du mit den neuen Daten angemeldet.</p>
             </section>
 
             <section id="setupApSection" class="panel" hidden>
@@ -1132,7 +1136,7 @@
                 </details>
                 <details>
                   <summary>Login und Sprache</summary>
-                  <p>Der Standardzugang ist admin / pixeluhr. Ändere Benutzer und Passwort nach der Einrichtung unter Admin-Zugriff. Die Sprache kann oben umgestellt werden und steuert auch die Wochentage auf dem Display.</p>
+                  <p>Ab Werk gilt der Benutzer admin ohne Passwort (Passwortfeld leer lassen). Ein Passwort kannst du jederzeit unter WLAN & Zugang festlegen oder wieder entfernen. Die Sprache kann oben umgestellt werden und steuert auch die Wochentage auf dem Display.</p>
                 </details>
                 <details>
                   <summary>WLAN und Adresse</summary>
@@ -1363,8 +1367,8 @@
 
           <div class="wizardStep" data-step="security" hidden>
             <h3>Zugang absichern</h3>
-            <p>Lege ein eigenes Admin-Passwort fest. Damit meldest du dich künftig an, und niemand im Netzwerk kann die Uhr einfach umstellen.</p>
-            <p id="wizardDefaultPwNote" class="banner warn small" hidden>Der Standardzugang admin / pixeluhr ist noch aktiv.</p>
+            <p>Optional: Lege ein Admin-Passwort fest, damit niemand im Netzwerk die Uhr einfach umstellen kann. Lässt du die Felder leer, meldest du dich nur mit dem Benutzernamen an.</p>
+            <p id="wizardDefaultPwNote" class="banner warn small" hidden>Zurzeit ist kein Passwort gesetzt.</p>
             <div class="grid">
               <label>
                 Neues Admin-Passwort
@@ -1375,7 +1379,7 @@
                 <input id="wizardAdminPassword2" type="password" minlength="8" autocomplete="new-password" data-reveal>
               </label>
             </div>
-            <p class="hint">Mindestens 8 Zeichen. Der Benutzername bleibt <strong id="wizardAdminUser" data-no-i18n>admin</strong>.</p>
+            <p class="hint">Leer lassen oder mindestens 8 Zeichen. Der Benutzername bleibt <strong id="wizardAdminUser" data-no-i18n>admin</strong>. Ein Passwort kannst du später jederzeit unter WLAN & Zugang setzen oder entfernen.</p>
           </div>
 
           <div class="wizardStep" data-step="summary" hidden>

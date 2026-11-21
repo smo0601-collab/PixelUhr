@@ -242,7 +242,8 @@ test('the Open-Meteo model is saved with the form and named in the weather card'
 test('a new clock logs in with the default credentials; others keep the login page', async () => {
   const fresh = harness(async () => ({ ok: true, json: async () => ({ firstSetup: true, adminUsername: 'admin' }) }));
   assert.equal(await fresh.run('tryFirstSetupLogin()'), true);
-  assert.deepEqual({ ...fresh.run('decodeBasicAuth(authHeaderValue())') }, { username: 'admin', password: 'pixeluhr' });
+  // Factory default: user admin with an empty password.
+  assert.deepEqual({ ...fresh.run('decodeBasicAuth(authHeaderValue())') }, { username: 'admin', password: '' });
   const configured = harness(async () => ({ ok: true, json: async () => ({ firstSetup: false }) }));
   assert.equal(await configured.run('tryFirstSetupLogin()'), false);
   assert.equal(configured.run('authHeaderValue()'), '');
@@ -254,7 +255,8 @@ test('password recovery checks code and new password before sending', () => {
   const { run } = harness(async () => ({ ok: true, json: async () => ({}) }));
   assert.match(run('recoveryInputError("12345", "longenough", "longenough")'), /6-stelligen Code/);
   assert.match(run('recoveryInputError("123456", "short", "short")'), /mindestens 8/);
-  assert.match(run('recoveryInputError("123456", "pixeluhr", "pixeluhr")'), /Standardpasswort/);
+  // The former default "pixeluhr" is an ordinary password now.
+  assert.equal(run('recoveryInputError("123456", "pixeluhr", "pixeluhr")'), '');
   assert.match(run('recoveryInputError("123456", "longenough", "different1")'), /nicht überein/);
   assert.equal(run('recoveryInputError("123456", "longenough", "longenough")'), '');
 });

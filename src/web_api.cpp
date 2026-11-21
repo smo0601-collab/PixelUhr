@@ -183,6 +183,8 @@ void handleConfigPost(AsyncWebServerRequest *request) {
   if (!requireAdminAuth(request)) return;
   const String newAdminUsername = sanitizeHostname(paramValue(request, "adminUsername", config.adminUsername));
   const String newAdminPassword = paramValue(request, "adminPassword", "");
+  // "adminPasswordClear=1" removes the password: the admin user then needs none.
+  const bool clearAdminPassword = paramValue(request, "adminPasswordClear", "0") == "1";
   if (newAdminPassword.length() > 0 && newAdminPassword.length() < MIN_ADMIN_PASSWORD_LENGTH) {
     sendJsonError(request, 400, "Das Admin-Passwort muss mindestens 8 Zeichen lang sein.");
     return;
@@ -222,7 +224,8 @@ void handleConfigPost(AsyncWebServerRequest *request) {
   const String oldWeatherApiKey = config.weatherApiKey;
 
   // Hashing is the only step that can fail, so it runs before other changes.
-  if (newAdminPassword.length() > 0 && !setAdminPassword(newAdminPassword)) {
+  if ((clearAdminPassword || newAdminPassword.length() > 0) &&
+      !setAdminPassword(clearAdminPassword ? String(DEFAULT_ADMIN_PASSWORD) : newAdminPassword)) {
     sendJsonError(request, 500, "Admin-Passwort konnte nicht gespeichert werden.");
     return;
   }
@@ -292,7 +295,7 @@ void handleConfigPost(AsyncWebServerRequest *request) {
   setupBuzzer();
   lastRender = 0;
   // Credentials are checked live, so a login change needs no restart.
-  const bool authChanged = oldAdminUsername != config.adminUsername || newAdminPassword.length() > 0;
+  const bool authChanged = oldAdminUsername != config.adminUsername || newAdminPassword.length() > 0 || clearAdminPassword;
   const bool restartRequired =
     oldWidth != config.width ||
     oldHeight != config.height ||

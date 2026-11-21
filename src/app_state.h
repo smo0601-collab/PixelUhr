@@ -32,12 +32,14 @@ constexpr int RIGHT_ICON_X = 21;
 constexpr int LEFT_VALUE_X = 1;
 constexpr int LEFT_VALUE_W = 18;
 constexpr const char *DEFAULT_ADMIN_USERNAME = "admin";
-constexpr const char *DEFAULT_ADMIN_PASSWORD = "pixeluhr";
+// Factory default: user "admin" with an empty password (no password needed
+// until the owner sets one; it can be removed again later).
+constexpr const char *DEFAULT_ADMIN_PASSWORD = "";
 constexpr const char *DEFAULT_LANGUAGE = "de";
 constexpr const char *DEFAULT_WIFI_COUNTRY = "DE";
 constexpr const char *DEFAULT_SETUP_AP_PASSWORD = "pixeluhr";
 constexpr const char *SETUP_AP_SSID_PREFIX = "PixelUhr-Setup-";
-#define FIRMWARE_VERSION_TEXT "1.0.2"
+#define FIRMWARE_VERSION_TEXT "1.0.3"
 constexpr const char *FIRMWARE_VERSION = FIRMWARE_VERSION_TEXT;
 extern const char FIRMWARE_VERSION_BINARY_MARKER[];
 // 1: plain admin password in NVS. 2: salted PBKDF2-HMAC-SHA256 hash.

@@ -210,6 +210,14 @@ static void testPostalQuery() {
 }
 
 
+static void testEmptyAdminPassword() {
+  // "admin:" (factory default, no password) must parse with an empty password.
+  BasicCredentials credentials;
+  assert(parseBasicAuthorization("Basic YWRtaW46", credentials));  // base64("admin:")
+  assert(strcmp(credentials.username, "admin") == 0 && credentials.password[0] == 0);
+  assert(!parseBasicAuthorization("Basic YWRtaW4=", credentials));  // "admin" without colon
+}
+
 static void testPageSequence() {
   // Pages 0..5; 2, 3 and 4 are empty (e.g. no warnings, no events, no texts).
   const bool content[] = {true, true, false, false, false, true};
@@ -340,6 +348,7 @@ static void testWeatherDetails() {
 }
 
 int main() {
+  testEmptyAdminPassword();
   testPageSequence();
   testCalendar();
   testTextLayout();

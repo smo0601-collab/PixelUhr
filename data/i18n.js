@@ -187,7 +187,7 @@ const translations = {
     "Der Einrichtungsassistent führt durch WLAN, Display, Standort und Admin-Passwort.": "The setup assistant guides you through Wi-Fi, display, location and admin password.",
     "Nach dem Neustart die Uhr im eigenen WLAN unter http://pixeluhr.local öffnen.": "After the restart, open the clock on your own Wi-Fi at http://pixeluhr.local.",
     "Login und Sprache": "Login and language",
-    "Der Standardzugang ist admin / pixeluhr. Ändere Benutzer und Passwort nach der Einrichtung unter Admin-Zugriff. Die Sprache kann oben umgestellt werden und steuert auch die Wochentage auf dem Display.": "The default login is admin / pixeluhr. Change user and password after setup under Admin access. The language can be changed at the top and also controls the weekdays on the display.",
+    "Ab Werk gilt der Benutzer admin ohne Passwort (Passwortfeld leer lassen). Ein Passwort kannst du jederzeit unter WLAN & Zugang festlegen oder wieder entfernen. Die Sprache kann oben umgestellt werden und steuert auch die Wochentage auf dem Display.": "Out of the box the user is admin without a password (leave the password field empty). You can set or remove a password at any time under Wi-Fi & access. The language can be changed at the top and also controls the weekdays on the display.",
     "WLAN und Adresse": "Wi-Fi and address",
     "Die Browser-Adresse ist der Hostname für die .local-Adresse. Mit pixeluhr erreichst du die Uhr normalerweise unter http://pixeluhr.local. Wenn .local nicht klappt, nutze die IP-Adresse aus dem Router.": "The browser address is the hostname for the .local address. With pixeluhr you usually reach the clock at http://pixeluhr.local. If .local does not work, use the IP address from your router.",
     "Display einrichten": "Set up the display",
@@ -674,7 +674,17 @@ const translations = {
     "Es läuft bereits ein Update.": "An update is already running.",
     "Keine Schlagzeilen gefunden": "No headlines found",
     "Ungültige Adresse": "Invalid address",
-    "Updates": "Updates"
+    "Updates": "Updates",
+    "Kein Passwort verwenden (Anmeldung nur mit dem Benutzernamen)": "Use no password (log in with the user name only)",
+    "Zurzeit ist kein Passwort gesetzt: Anmeldung nur mit dem Benutzernamen, Passwort leer lassen.": "No password is set: log in with the user name only and leave the password empty.",
+    "Ein Passwort ist gesetzt.": "A password is set.",
+    "Passwort: 8 bis 64 Zeichen oder leer. Ohne Passwort kann jeder in deinem WLAN die Uhr bedienen. Nach dem Speichern bleibst du mit den neuen Daten angemeldet.": "Password: 8 to 64 characters or empty. Without a password, anyone on your Wi-Fi can operate the clock. After saving you stay logged in with the new details.",
+    "Ab Werk gilt der Benutzer admin ohne Passwort (Passwortfeld leer lassen). Ein Passwort kannst du jederzeit unter WLAN & Zugang festlegen oder wieder entfernen.": "Out of the box the user is admin without a password (leave the password field empty). You can set or remove a password at any time under Wi-Fi & access.",
+    "Optional: Lege ein Admin-Passwort fest, damit niemand im Netzwerk die Uhr einfach umstellen kann. Lässt du die Felder leer, meldest du dich nur mit dem Benutzernamen an.": "Optional: set an admin password so that nobody on the network can simply change the clock. If you leave the fields empty, you log in with the user name only.",
+    "Zurzeit ist kein Passwort gesetzt.": "No password is set at the moment.",
+    "Kein Passwort (Anmeldung nur mit Benutzername)": "No password (log in with the user name only)",
+    "Leer lassen oder mindestens 8 Zeichen. Der Benutzername bleibt": "Leave empty or use at least 8 characters. The user name stays",
+    ". Ein Passwort kannst du später jederzeit unter WLAN & Zugang setzen oder entfernen.": ". You can set or remove a password later at any time under Wi-Fi & access."
   }
 };
 

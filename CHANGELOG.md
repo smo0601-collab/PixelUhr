@@ -1,5 +1,18 @@
 # Änderungen
 
+## PixelUhr 1.0.3 (Firmware 1.0.3, Weboberfläche 1.0.0)
+
+### Geändert
+
+- Zugang ab Werk: Benutzer `admin` **ohne Passwort** (Passwortfeld leer lassen). Bisher `admin` / `pixeluhr`.
+- Admin-Passwort ist optional: im Einrichtungsassistenten leer lassen, unter *WLAN & Zugang* jederzeit setzen
+  (8–64 Zeichen) oder mit „Kein Passwort verwenden“ wieder entfernen (`adminPasswordClear=1`).
+- „pixeluhr“ ist kein gesperrtes Standardpasswort mehr, sondern ein normales Passwort.
+- Uhren, auf denen bereits ein eigenes Passwort gespeichert ist, behalten es. Uhren, die noch den alten
+  Werkszugang `admin` / `pixeluhr` nutzten, sind nach dem Update ohne Passwort erreichbar.
+- Tests für leeres Passwort (Firmware und Weboberfläche).
+
+
 ## PixelUhr 1.0.2 (Firmware 1.0.2, Weboberfläche 1.0.0)
 
 ### Behoben
@@ -32,7 +45,7 @@ Erste Version von PixelUhr auf Basis von PixelClock 0.1.22 (Firmware) / 0.1.21 (
 
 - Projekt, Weboberfläche, Dokumentation, Skripte und Release-Dateien heißen jetzt **PixelUhr**.
 - Setup-WLAN `PixelUhr-Setup-XXXXXX` (offen, ohne Passwort), Adresse `http://pixeluhr.local`,
-  Router-Name `pixeluhr-XXXXXX`, Werkszugang `admin` / `pixeluhr`.
+  Router-Name `pixeluhr-XXXXXX`, Werkszugang `admin` / `pixeluhr` (ab 1.0.3: `admin` ohne Passwort).
 - Versionsmarker `PIXELUHR_FIRMWARE_VERSION=` und `PIXELUHR_LITTLEFS_VERSION=`.
 - Sicherungsdateien heißen `pixeluhr-settings`; alte `pixel-clock-settings` werden weiterhin importiert.
 

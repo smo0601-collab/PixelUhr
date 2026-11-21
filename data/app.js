@@ -89,7 +89,8 @@ const $ = (id) => document.getElementById(id);
 const setupDismissedStorageKey = "pixelUhrSetupDismissed";
 const setupCardHiddenStorageKey = "pixelUhrSetupCardHidden";
 const authStorageKey = "pixelUhrAuth";
-const defaultAdminPassword = "pixeluhr";
+// Factory default: user "admin" without a password.
+const defaultAdminPassword = "";
 let currentLanguage = storedLanguage || ((navigator.language || "").toLowerCase().startsWith("de") ? "de" : "en");
 let statusRefreshTimer = 0;
 let statusInFlight = null;
@@ -794,6 +795,8 @@ function setForm(config) {
   updateSetupApSection();
   if (typeof renderPageOrderEditor === "function") renderPageOrderEditor();
   updateNightModeControls();
+  $("adminPasswordClear").checked = false;
+  updateAdminPasswordControls();
   savedForm = formBody().toString();
   updateDirtyState();
 }
@@ -813,7 +816,8 @@ function formBody() {
   const adminUsername = $("adminUsername").value.trim();
   if (adminUsername) data.set("adminUsername", adminUsername);
   const adminPassword = $("adminPassword").value;
-  if (adminPassword) data.set("adminPassword", adminPassword);
+  if ($("adminPasswordClear").checked) data.set("adminPasswordClear", "1");
+  else if (adminPassword) data.set("adminPassword", adminPassword);
   const setupApPassword = $("setupApPassword").value;
   if (setupApPassword) data.set("setupApPassword", setupApPassword);
   const openWeatherApiKey = $("openWeatherApiKey").value.trim();
@@ -1134,6 +1138,17 @@ function updatePageControls() {
   $("pageSeconds").disabled = !automatic;
 }
 
+// "No password": the admin user logs in with an empty password.
+function updateAdminPasswordControls() {
+  const clear = $("adminPasswordClear").checked;
+  $("adminPassword").disabled = clear;
+  if (clear) $("adminPassword").value = "";
+  $("adminPasswordState").textContent = tr(savedConfig?.adminPasswordIsDefault
+    ? "Zurzeit ist kein Passwort gesetzt: Anmeldung nur mit dem Benutzernamen, Passwort leer lassen."
+    : "Ein Passwort ist gesetzt.");
+  $("adminPasswordClear").closest("label").hidden = Boolean(savedConfig?.adminPasswordIsDefault);
+}
+
 function updateNightModeControls() {
   const bySun = $("nightMode").value === "1";
   $("nightHoursGrid").hidden = bySun;
@@ -1190,7 +1205,8 @@ function adoptChangedLogin(body) {
     return;
   }
   const username = body.has("adminUsername") ? sanitizeName(body.get("adminUsername"), current.username) : current.username;
-  setAuthHeader(basicAuthValue(username, body.get("adminPassword") || current.password));
+  const password = body.get("adminPasswordClear") === "1" ? "" : body.get("adminPassword") || current.password;
+  setAuthHeader(basicAuthValue(username, password));
   $("adminUsername").value = username;
   savedConfig.adminUsername = username;
 }
@@ -1233,7 +1249,7 @@ async function saveConfig() {
     savedForm = formBody().toString();
     savedConfig.adminUsername = $("adminUsername").value;
     savedConfig.adminPasswordIsDefault = data.adminPasswordIsDefault ??
-      (body.has("adminPassword") ? false : savedConfig.adminPasswordIsDefault);
+      (body.has("adminPasswordClear") ? true : body.has("adminPassword") ? false : savedConfig.adminPasswordIsDefault);
     savedConfig.hasOpenWeatherApiKey = hasProviderKeys[1];
     savedConfig.hasWeatherApiKey = hasProviderKeys[4];
     savedConfig.restartRequired = Boolean(data.restartRequired);
@@ -1607,7 +1623,6 @@ function recoveryInputError(code, first, second) {
   if (!/^\d{6}$/.test(code)) return "Bitte den 6-stelligen Code von der Uhr eingeben.";
   if (first.length < 8) return "Das Admin-Passwort muss mindestens 8 Zeichen lang sein.";
   if (first.length > 64) return "Das Admin-Passwort darf höchstens 64 Zeichen lang sein.";
-  if (first === defaultAdminPassword) return "Bitte ein anderes Passwort als das Standardpasswort wählen.";
   if (first !== second) return "Die Passwörter stimmen nicht überein.";
   return "";
 }
@@ -1774,6 +1789,7 @@ function bindAction(id, action) {
 $("weatherProvider").addEventListener("change", updateProviderFields);
 $("autoPage").addEventListener("change", updatePageControls);
 $("nightMode").addEventListener("change", updateNightModeControls);
+$("adminPasswordClear").addEventListener("change", updateAdminPasswordControls);
 bindAction("buzzerTestBtn", async () => {
   if (dirty) message("Bitte zuerst speichern, damit der Summer-Pin übernommen wird.");
   const res = await apiFetch("/api/buzzer/test", { method: "POST" });

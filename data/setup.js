@@ -142,7 +142,7 @@ function renderWizardSummary() {
   const ssid = $("ssid").value;
   const password = $("adminPassword").value
     ? ["Wird geändert", false]
-    : savedConfig?.adminPasswordIsDefault ? ["Standardpasswort bleibt aktiv", true] : ["Eigenes Passwort ist gesetzt", false];
+    : savedConfig?.adminPasswordIsDefault ? ["Kein Passwort (Anmeldung nur mit Benutzername)", true] : ["Eigenes Passwort ist gesetzt", false];
   const rows = [
     ["WLAN", ssid ? `${ssid} · ${$("wifiCountry").value}` : tr("Nicht festgelegt"), "wifi", !ssid],
     ["Browser-Adresse", `http://${sanitizeName($("hostname").value)}.local`, "wifi"],
@@ -224,17 +224,15 @@ function showWizardStep(index) {
   wizardStepElement(name).querySelector("h3")?.focus({ preventScroll: true });
 }
 
-// A new clock is opened without a login, so an own admin password is mandatory
-// while the default is active; the default itself is not accepted again.
+// The admin password is optional: empty fields keep the current state (no
+// password on a new clock).
 function applyWizardPassword() {
   const first = $("wizardAdminPassword").value;
   const second = $("wizardAdminPassword2").value;
   if (!first && !second) {
-    if (savedConfig?.adminPasswordIsDefault) return tr("Bitte ein eigenes Admin-Passwort festlegen.");
     setFormField("adminPassword", "");
     return "";
   }
-  if (first === defaultAdminPassword) return tr("Bitte ein anderes Passwort als das Standardpasswort wählen.");
   if (first.length < (savedConfig?.minAdminPasswordLength || 8)) return tr("Das Admin-Passwort muss mindestens 8 Zeichen lang sein.");
   if (first !== second) return tr("Die Passwörter stimmen nicht überein.");
   setFormField("adminPassword", first);
