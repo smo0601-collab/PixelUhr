@@ -210,6 +210,23 @@ static void testPostalQuery() {
 }
 
 
+static void testPageSequence() {
+  // Pages 0..5; 2, 3 and 4 are empty (e.g. no warnings, no events, no texts).
+  const bool content[] = {true, true, false, false, false, true};
+  auto has = [&](size_t i) { return content[i]; };
+  assert(nextPageWithContent(0, 6, has) == 1);
+  assert(nextPageWithContent(1, 6, has) == 5);  // skips all empty pages, does not jump to 0
+  assert(nextPageWithContent(5, 6, has) == 0);  // wraps around
+  const bool none[] = {false, false, false};
+  assert(nextPageWithContent(1, 3, [&](size_t i) { return none[i]; }) == 3);
+  const bool onlyLast[] = {false, false, false, true};
+  assert(nextPageWithContent(3, 4, [&](size_t i) { return onlyLast[i]; }) == 3);  // stays on the only page
+  // Every entry is checked exactly once, in order.
+  std::vector<size_t> visited;
+  nextPageWithContent(2, 5, [&](size_t i) { visited.push_back(i); return false; });
+  assert((visited == std::vector<size_t>{3, 4, 0, 1, 2}));
+}
+
 static void testCalendar() {
   using namespace cal;
   int y, m, d;
@@ -323,6 +340,7 @@ static void testWeatherDetails() {
 }
 
 int main() {
+  testPageSequence();
   testCalendar();
   testTextLayout();
   testRss();
@@ -379,5 +397,5 @@ int main() {
   assert(normalizeWeatherApiCode(1000) == 0);
   assert(normalizeWeatherApiCode(1168) == 57);
   assert(normalizeWeatherApiCode(1258) == 85);
-  std::cout << "Firmware regression tests passed (calendar, holidays, sun/moon, text layout, RSS, weather details, cooperative network reads, deadlines, scheduling, rollover, five providers, missing/null data, condition mapping, Basic auth parsing, login throttling).\n";
+  std::cout << "Firmware regression tests passed (page sequence, calendar, holidays, sun/moon, text layout, RSS, weather details, cooperative network reads, deadlines, scheduling, rollover, five providers, missing/null data, condition mapping, Basic auth parsing, login throttling).\n";
 }

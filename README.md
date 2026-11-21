@@ -6,7 +6,7 @@ ESP32 clock for WS2812B/NeoPixel LED matrices (default 32×8) with a modern web 
 and English: time, date, weather with pixel icons, scrolling texts, calendar events with countdowns,
 German public holidays, alarms with a buzzer, news headlines and more.
 
-Firmware `1.0.1` · Web interface `1.0.0` · Based on [PixelClock](https://github.com/mBlinkii/PixelClock) (MIT).
+Firmware `1.0.2` · Web interface `1.0.0` · Based on [PixelClock](https://github.com/mBlinkii/PixelClock) (MIT).
 
 The full documentation is in German: [README.de.md](README.de.md). Short summary:
 
@@ -34,7 +34,7 @@ ESP32 Dev Module (4 MB), WS2812B matrix on GPIO 18, optional active 3 V piezo bu
 
 ## Installation (once, via USB, new partition table)
 
-- **Complete image:** write `pixeluhr-komplett-v1.0.1.bin` to `0x0`
+- **Complete image:** write `pixeluhr-komplett-v1.0.2.bin` to `0x0`
   (e.g. with [ESP Tool](https://espressif.github.io/esptool-js/) or `esptool.py write_flash 0x0 …`).
 - **Arduino IDE:** esp32 core 2.0.17 or 3.x, libraries FastLED, ArduinoJson 7, Async TCP and
   ESP Async WebServer (both by ESP32Async). Board "ESP32 Dev Module", Partition Scheme

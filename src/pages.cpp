@@ -2,6 +2,7 @@
 #include <algorithm>
 
 #include "app_state.h"
+#include "runtime_policy.h"
 #include "display_internal.h"
 #include "features.h"
 #include "text_layout.h"
@@ -804,26 +805,28 @@ static void drawClassic(uint8_t type, uint32_t now) {
   }
 }
 
-// Enters the entry at `index`; returns false if that page has nothing to show.
+// Enters the entry at `index`; returns false (and changes nothing) if that
+// page has nothing to show.
 static bool enterEntry(size_t index, uint32_t now) {
   const PageEntry &entry = pageEntries[index];
+  std::vector<Message> list;
+  if (!isClassic(entry.type) && !buildPlaylist(entry.type, list)) return false;
   entryIndex = index;
   entryStarted = now;
   activeType = entry.type;
   currentPage = entry.type;
-  if (isClassic(entry.type)) return true;
-  std::vector<Message> list;
-  if (!buildPlaylist(entry.type, list)) return false;
-  pagePlayer.load(std::move(list), now);
+  if (!isClassic(entry.type)) pagePlayer.load(std::move(list), now);
   return true;
 }
 
+// Moves on to the next page in the sequence that has content. Empty pages are
+// skipped; the search always starts from the current page.
 static void advance(uint32_t now) {
   const size_t count = pageEntries.size();
-  for (size_t step = 1; step <= count; step++) {
-    if (enterEntry((entryIndex + step) % count, now)) return;
-  }
-  // Nothing has content: fall back to the clock.
+  const size_t current = entryIndex < count ? entryIndex : count - 1;
+  const size_t next = nextPageWithContent(current, count, [&](size_t index) { return enterEntry(index, now); });
+  if (next < count) return;
+  // Nothing has content: show the clock, keep the position in the sequence.
   activeType = PAGE_CLOCK;
   currentPage = PAGE_CLOCK;
   entryStarted = now;

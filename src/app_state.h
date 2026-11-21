@@ -37,7 +37,7 @@ constexpr const char *DEFAULT_LANGUAGE = "de";
 constexpr const char *DEFAULT_WIFI_COUNTRY = "DE";
 constexpr const char *DEFAULT_SETUP_AP_PASSWORD = "pixeluhr";
 constexpr const char *SETUP_AP_SSID_PREFIX = "PixelUhr-Setup-";
-#define FIRMWARE_VERSION_TEXT "1.0.1"
+#define FIRMWARE_VERSION_TEXT "1.0.2"
 constexpr const char *FIRMWARE_VERSION = FIRMWARE_VERSION_TEXT;
 extern const char FIRMWARE_VERSION_BINARY_MARKER[];
 // 1: plain admin password in NVS. 2: salted PBKDF2-HMAC-SHA256 hash.

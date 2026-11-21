@@ -6,7 +6,7 @@ ESP32-Uhr für WS2812B/NeoPixel-LED-Matrizen (Standard 32×8) mit moderner, deut
 Weboberfläche: Uhrzeit, Datum, Wetter mit Symbolen, frei konfigurierbare Lauftexte, Termine mit
 Countdown, Feiertage, Wecker mit Summer, Nachrichten und vieles mehr.
 
-Firmware-Version: `1.0.1` · Weboberflächen-Version: `1.0.0`
+Firmware-Version: `1.0.2` · Weboberflächen-Version: `1.0.0`
 
 PixelUhr basiert auf [PixelClock](https://github.com/mBlinkii/PixelClock) (MIT-Lizenz) und
 erweitert es um die unten beschriebenen Funktionen.
@@ -142,7 +142,7 @@ userdata  0x3F0000   64 KB  Lauftexte, Termine, Wecker, Extras
 
 ### Weg A: fertiges Komplett-Image (am einfachsten)
 
-Die Datei `pixeluhr-komplett-v1.0.1.bin` enthält Bootloader, Partitionstabelle und Firmware
+Die Datei `pixeluhr-komplett-v1.0.2.bin` enthält Bootloader, Partitionstabelle und Firmware
 (mit Weboberfläche). Sie wird ab Adresse `0x0` geschrieben.
 
 - **Im Browser (Chrome/Edge):** [ESP Tool](https://espressif.github.io/esptool-js/) öffnen, *Connect*,
@@ -152,7 +152,7 @@ Die Datei `pixeluhr-komplett-v1.0.1.bin` enthält Bootloader, Partitionstabelle 
 
   ```bash
   esptool.py --chip esp32 --baud 460800 erase_flash
-  esptool.py --chip esp32 --baud 460800 write_flash 0x0 pixeluhr-komplett-v1.0.1.bin
+  esptool.py --chip esp32 --baud 460800 write_flash 0x0 pixeluhr-komplett-v1.0.2.bin
   ```
 
 ### Weg B: Arduino IDE (2.x)

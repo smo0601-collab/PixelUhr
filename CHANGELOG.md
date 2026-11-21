@@ -1,5 +1,15 @@
 # Änderungen
 
+## PixelUhr 1.0.2 (Firmware 1.0.2, Weboberfläche 1.0.0)
+
+### Behoben
+
+- Seitenablauf sprang zurück an den Anfang, sobald eine leere Seite (z. B. keine Warnungen, keine Termine)
+  übersprungen werden musste. Die Suche nach der nächsten Seite mit Inhalt rechnete von der zuletzt geprüften
+  statt von der aktuellen Seite weiter und übersprang dadurch immer größere Abstände. Jetzt wird jede Seite
+  genau einmal der Reihe nach geprüft (`nextPageWithContent()` in `src/runtime_policy.h`, mit Test).
+
+
 ## PixelUhr 1.0.1 (Firmware 1.0.1, Weboberfläche 1.0.0)
 
 ### Behoben
