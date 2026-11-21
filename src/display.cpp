@@ -1,0 +1,652 @@
+#include "app_state.h"
+#include "display_internal.h"
+#include "features.h"
+#include "text_layout.h"
+#include "weather_icons.h"
+
+uint16_t xy(uint8_t x, uint8_t y) {
+  if (x >= config.width || y >= config.height) return 0;
+  uint8_t physX = x;
+  uint8_t physY = y;
+  if (config.origin == 1 || config.origin == 3) physX = config.width - 1 - physX;
+  if (config.origin == 2 || config.origin == 3) physY = config.height - 1 - physY;
+
+  if (config.wiringMode == 2 || config.wiringMode == 3) {
+    if (config.wiringMode == 3 && (physX % 2 == 1)) physY = config.height - 1 - physY;
+    return physX * config.height + physY;
+  }
+
+  if (config.wiringMode == 1 && (physY % 2 == 1)) physX = config.width - 1 - physX;
+  return physY * config.width + physX;
+}
+
+void px(int x, int y, CRGB color) {
+  if (x < 0 || y < 0 || x >= config.width || y >= config.height) return;
+  const uint16_t i = xy(x, y);
+  if (i < ledCount) leds[i] = color;
+}
+
+template <uint8_t PIN>
+void addFastLedsForPin() {
+  if (config.colorRgb) {
+    FastLED.addLeds<WS2812B, PIN, RGB>(leds, ledCount);
+  } else {
+    FastLED.addLeds<WS2812B, PIN, GRB>(leds, ledCount);
+  }
+}
+
+void setupFastLed() {
+  ledCount = min<uint16_t>(MAX_LEDS, config.width * config.height);
+  switch (config.dataPin) {
+    case 2: addFastLedsForPin<2>(); break;
+    case 4: addFastLedsForPin<4>(); break;
+    case 5: addFastLedsForPin<5>(); break;
+    case 12: addFastLedsForPin<12>(); break;
+    case 13: addFastLedsForPin<13>(); break;
+    case 14: addFastLedsForPin<14>(); break;
+    case 15: addFastLedsForPin<15>(); break;
+    case 16: addFastLedsForPin<16>(); break;
+    case 17: addFastLedsForPin<17>(); break;
+    case 18: addFastLedsForPin<18>(); break;
+    case 19: addFastLedsForPin<19>(); break;
+    case 21: addFastLedsForPin<21>(); break;
+    case 22: addFastLedsForPin<22>(); break;
+    case 23: addFastLedsForPin<23>(); break;
+    case 25: addFastLedsForPin<25>(); break;
+    case 26: addFastLedsForPin<26>(); break;
+    case 27: addFastLedsForPin<27>(); break;
+    case 32: addFastLedsForPin<32>(); break;
+    case 33: addFastLedsForPin<33>(); break;
+    default:
+      config.dataPin = 18;
+      addFastLedsForPin<18>();
+      break;
+  }
+  FastLED.setCorrection(TypicalLEDStrip);
+  // Temporal dithering needs continuous refresh; our static frames are retained.
+  FastLED.setDither(false);
+  FastLED.setBrightness(config.brightness);
+  FastLED.clear(true);
+}
+
+// Matrix text, icon, page, and frame rendering.
+constexpr int TIME_HOUR_OFFSET_X = 1;
+constexpr int DATE_PAGE_OFFSET_X = 1;
+constexpr int TEXT_LEFT_ICON_RIGHT_OFFSET_X = -1;
+constexpr int TEXT_LEFT_ICON_RIGHT_ICON_OFFSET_X = 1;
+constexpr int TEXT_RIGHT_ICON_LEFT_WEEKDAY_OFFSET_X = -1;
+
+void updateBrightnessForTime() {
+  const uint8_t target = isNightTime() ? min(config.brightness, config.nightBrightness) : config.brightness;
+  FastLED.setBrightness(target);
+}
+
+bool isNightTime() {
+  struct tm timeinfo;
+  if (!getLocalTime(&timeinfo, 10)) return !weather.isDay;
+  if (config.nightMode == 1) {
+    int16_t rise, set;
+    if (sunTimesToday(rise, set)) {
+      const int minute = timeinfo.tm_hour * 60 + timeinfo.tm_min;
+      return minute < rise || minute >= set;
+    }
+  }
+  const uint8_t h = timeinfo.tm_hour;
+  return config.nightStart > config.nightEnd
+    ? (h >= config.nightStart || h < config.nightEnd)
+    : (h >= config.nightStart && h < config.nightEnd);
+}
+
+CRGB textPixelColor(int x, int y, CRGB fallback) {
+  uint8_t mode = config.colorGradientMode;
+  if (forceTextGradient && mode == 0) mode = 1;
+  if (mode == 0) return fallback;
+  const uint8_t hue = mode == 2
+    ? (uint8_t)((millis() / 180) & 0xff)
+    : (uint8_t)((x * 9 + y * 4 + millis() / 90) & 0xff);
+  return CHSV(hue, 220, 255);
+}
+
+const char *glyphFor(char c) {
+  return textlayout::smallGlyph(c);
+}
+
+uint8_t drawChar3x5(int x, int y, char c, CRGB color) {
+  if (c == ' ') return 2;
+  const char *g = glyphFor(c);
+  if (!g) return 0;
+  for (uint8_t row = 0; row < 5; row++) {
+    for (uint8_t col = 0; col < 3; col++) {
+      if (g[row * 3 + col] == '1') px(x + col, y + row, textPixelColor(x + col, y + row, color));
+    }
+  }
+  return 4;
+}
+
+uint8_t charAdvance3x5(char c) {
+  if (c == ' ') return 2;
+  if (c == ':' || c == '.') return 2;
+  return glyphFor(c) ? 4 : 0;
+}
+
+void drawText3x5(int x, int y, const String &text, CRGB color) {
+  int cursor = x;
+  for (uint8_t i = 0; i < text.length(); i++) {
+    cursor += drawChar3x5(cursor, y, text[i], color);
+  }
+}
+
+void drawText3x5Styled(int x, int y, const String &text) {
+  int cursor = x;
+  for (uint8_t i = 0; i < text.length(); i++) {
+    CRGB color = packedColor(config.colorText);
+    if (text[i] == ':') color = packedColor(config.colorColon);
+    else if (text[i] == '.') color = packedColor(config.colorPoint);
+    drawChar3x5(cursor, y, text[i], color);
+    cursor += charAdvance3x5(text[i]);
+  }
+}
+
+uint8_t textWidth3x5(const String &text) {
+  uint8_t width = 0;
+  for (uint8_t i = 0; i < text.length(); i++) width += charAdvance3x5(text[i]);
+  return width > 0 ? width - 1 : 0;
+}
+
+void drawRightAlignedStyled(int x, int y, int width, const String &text) {
+  const int start = x + width - textWidth3x5(text);
+  drawText3x5Styled(start, y, text);
+}
+
+void drawRightAlignedText(int x, int y, int width, const String &text, CRGB color) {
+  const int start = x + width - textWidth3x5(text);
+  int cursor = start;
+  for (uint8_t i = 0; i < text.length(); i++) {
+    drawChar3x5(cursor, y, text[i], color);
+    cursor += charAdvance3x5(text[i]);
+  }
+}
+
+void drawCenteredText3x5(int y, const String &text, CRGB color) {
+  const int start = max(0, (int(config.width) - int(textWidth3x5(text))) / 2);
+  drawText3x5(start, y, text, color);
+}
+
+void drawCenteredStyled3x5(int y, const String &text) {
+  const int start = max(0, (int(config.width) - int(textWidth3x5(text))) / 2);
+  drawText3x5Styled(start, y, text);
+}
+
+const char *bigGlyphFor(char c) {
+  switch (c) {
+    case '0': return "011101000110001100011000101110";
+    case '1': return "001000110000100001000010001110";
+    case '2': return "011101000100010001001000011111";
+    case '3': return "111100000100110000010000111110";
+    case '4': return "000100011001010111110001000010";
+    case '5': return "111111000011110000010000111110";
+    case '6': return "011101000011110100011000101110";
+    case '7': return "111110000100010001000100001000";
+    case '8': return "011101000101110100011000101110";
+    case '9': return "011101000101111000010000101110";
+    case '-': return "000000000000000111110000000000";
+    case 'C': return "011101000110000100001000101110";
+    case 'F': return "111111000011110100001000010000";
+    default: return nullptr;
+  }
+}
+
+uint8_t bigCharAdvance(char c) {
+  return bigGlyphFor(c) ? 6 : 0;
+}
+
+uint8_t bigTextWidth(const String &text) {
+  uint8_t width = 0;
+  for (uint8_t i = 0; i < text.length(); i++) width += bigCharAdvance(text[i]);
+  return width > 0 ? width - 1 : 0;
+}
+
+void drawBigChar(int x, int y, char c, CRGB color) {
+  const char *g = bigGlyphFor(c);
+  if (!g) return;
+  for (uint8_t row = 0; row < 6; row++) {
+    for (uint8_t col = 0; col < 5; col++) {
+      if (g[row * 5 + col] == '1') px(x + col, y + row, textPixelColor(x + col, y + row, color));
+    }
+  }
+}
+
+void drawBigTextCentered(int y, const String &text) {
+  int cursor = max(0, (int(config.width) - int(bigTextWidth(text))) / 2);
+  for (uint8_t i = 0; i < text.length(); i++) {
+    CRGB color = packedColor(config.colorText);
+    if (text[i] == ':') color = packedColor(config.colorColon);
+    drawBigChar(cursor, y, text[i], color);
+    cursor += bigCharAdvance(text[i]);
+  }
+}
+
+void drawBigClockCentered(const tm &timeinfo) {
+  char hours[12];
+  char minutes[12];
+  uint8_t hour = timeinfo.tm_hour;
+  if (config.hourFormat == 12) {
+    hour %= 12;
+    if (hour == 0) hour = 12;
+  }
+  snprintf(hours, sizeof(hours), "%02d", hour);
+  snprintf(minutes, sizeof(minutes), "%02d", timeinfo.tm_min);
+  const CRGB textColor = packedColor(config.colorText);
+  const CRGB colonColor = packedColor(config.colorColon);
+  drawBigChar(1 + TIME_HOUR_OFFSET_X, 1, hours[0], textColor);
+  drawBigChar(7 + TIME_HOUR_OFFSET_X, 1, hours[1], textColor);
+  px(15, 3, textPixelColor(15, 3, colonColor));
+  px(16, 3, textPixelColor(16, 3, colonColor));
+  px(15, 5, textPixelColor(15, 5, colonColor));
+  px(16, 5, textPixelColor(16, 5, colonColor));
+  drawBigChar(20, 1, minutes[0], textColor);
+  drawBigChar(26, 1, minutes[1], textColor);
+}
+
+const char *tallNarrowGlyphFor(char c) {
+  switch (c) {
+    case '0': return "111101101101101111";
+    case '1': return "010110010010010111";
+    case '2': return "111001001111100111";
+    case '3': return "111001001111001111";
+    case '4': return "101101101111001001";
+    case '5': return "111100100111001111";
+    case '6': return "111100100111101111";
+    case '7': return "111001010010010010";
+    case '8': return "111101101111101111";
+    case '9': return "111101101111001111";
+    default: return nullptr;
+  }
+}
+
+uint8_t tallNarrowAdvance(char c) {
+  if (c == '.') return 2;
+  return tallNarrowGlyphFor(c) ? 4 : 0;
+}
+
+uint8_t tallNarrowWidth(const String &text) {
+  uint8_t width = 0;
+  for (uint8_t i = 0; i < text.length(); i++) width += tallNarrowAdvance(text[i]);
+  return width > 0 ? width - 1 : 0;
+}
+
+void drawTallNarrowChar(int x, int y, char c, CRGB color) {
+  const char *g = tallNarrowGlyphFor(c);
+  if (!g) return;
+  for (uint8_t row = 0; row < 6; row++) {
+    for (uint8_t col = 0; col < 3; col++) {
+      if (g[row * 3 + col] == '1') px(x + col, y + row, textPixelColor(x + col, y + row, color));
+    }
+  }
+}
+
+void drawLargeDateCentered(int y) {
+  struct tm timeinfo;
+  if (!getLocalTime(&timeinfo, 10)) return;
+  char buffer[24];
+  snprintf(buffer, sizeof(buffer), "%02d.%02d.%02d", timeinfo.tm_mday, timeinfo.tm_mon + 1, (timeinfo.tm_year + 1900) % 100);
+  const String text(buffer);
+  int cursor = max(0, (int(config.width) - 28) / 2) + DATE_PAGE_OFFSET_X;
+  for (uint8_t i = 0; i < text.length(); i++) {
+    if (text[i] == '.') {
+      px(cursor, y + 5, textPixelColor(cursor, y + 5, packedColor(config.colorPoint)));
+    } else {
+      drawTallNarrowChar(cursor, y, text[i], packedColor(config.colorText));
+    }
+    cursor += (i == 5) ? 3 : tallNarrowAdvance(text[i]);
+  }
+}
+
+uint8_t compactDateAdvance(char c) {
+  if (c == '.') return 2;
+  if (c == '-') return 2;
+  if (c == ' ') return 1;
+  return glyphFor(c) ? 3 : 0;
+}
+
+uint8_t compactTextWidth3x5(const String &text) {
+  uint8_t width = 0;
+  for (uint8_t i = 0; i < text.length(); i++) width += compactDateAdvance(text[i]);
+  return width > 0 ? width - 1 : 0;
+}
+
+void drawCompactTextCentered3x5(int y, const String &text, CRGB color) {
+  int cursor = max(0, (int(config.width) - int(compactTextWidth3x5(text))) / 2);
+  for (uint8_t i = 0; i < text.length(); i++) {
+    if (text[i] == '.') {
+      px(cursor, y + 4, textPixelColor(cursor, y + 4, packedColor(config.colorPoint)));
+    } else if (text[i] != ' ') {
+      drawChar3x5(cursor, y, text[i], color);
+    }
+    cursor += compactDateAdvance(text[i]);
+  }
+}
+
+void drawCompactDateCentered(int y) {
+  struct tm timeinfo;
+  if (!getLocalTime(&timeinfo, 10)) return;
+  char buffer[40];
+  snprintf(buffer, sizeof(buffer), "%02d.%02d.%04d", timeinfo.tm_mday, timeinfo.tm_mon + 1, timeinfo.tm_year + 1900);
+  const String text(buffer);
+  int cursor = max(0, (int(config.width) - int(compactTextWidth3x5(text))) / 2) + DATE_PAGE_OFFSET_X;
+  for (uint8_t i = 0; i < text.length(); i++) {
+    if (text[i] == '.') {
+      px(cursor, y + 4, textPixelColor(cursor, y + 4, packedColor(config.colorPoint)));
+    } else {
+      drawChar3x5(cursor, y, text[i], packedColor(config.colorText));
+    }
+    cursor += compactDateAdvance(text[i]);
+  }
+}
+
+void drawDateValue(int x, int y) {
+  struct tm timeinfo;
+  if (!getLocalTime(&timeinfo, 10)) return;
+  char day[12];
+  char month[12];
+  snprintf(day, sizeof(day), "%02d", timeinfo.tm_mday);
+  snprintf(month, sizeof(month), "%02d", timeinfo.tm_mon + 1);
+  drawText3x5(x, y, day, packedColor(config.colorText));
+  px(x + 8, y + 4, textPixelColor(x + 8, y + 4, packedColor(config.colorPoint)));
+  drawText3x5(x + 10, y, month, packedColor(config.colorText));
+}
+
+void drawFixedClock(int x, int y, const tm &timeinfo, bool showColon) {
+  char hours[12];
+  char minutes[12];
+  uint8_t hour = timeinfo.tm_hour;
+  if (config.hourFormat == 12) {
+    hour %= 12;
+    if (hour == 0) hour = 12;
+  }
+  snprintf(hours, sizeof(hours), "%02d", hour);
+  snprintf(minutes, sizeof(minutes), "%02d", timeinfo.tm_min);
+  drawText3x5(x + TIME_HOUR_OFFSET_X, y, hours, packedColor(config.colorText));
+  if (showColon) drawChar3x5(x + 8, y, ':', packedColor(config.colorColon));
+  drawText3x5(x + 11, y, minutes, packedColor(config.colorText));
+}
+
+// Page markers in the bottom row: 3 px segments for up to 3 pages, narrower
+// ones for longer sequences.
+void drawIndicator(uint8_t active, uint8_t count) {
+  if (count < 2) return;
+  const uint8_t y = config.height - 1;
+  const uint8_t segment = count <= 3 ? 3 : count <= 5 ? 2 : 1;
+  const uint8_t gap = count <= 3 ? 2 : 1;
+  const int total = count * segment + (count - 1) * gap;
+  int areaX = VALUE_SLOT_X, areaW = VALUE_SLOT_W;
+  if (config.displayMode == 1) { areaX = LEFT_VALUE_X; areaW = LEFT_VALUE_W; }
+  else if (config.displayMode == 2) { areaX = 0; areaW = config.width; }
+  if (total > areaW) { areaX = 0; areaW = config.width; }
+  if (total > areaW) return;
+  const int start = areaX + (areaW - total) / 2;
+  for (uint8_t i = 0; i < count; i++) {
+    const CRGB color = i == active ? packedColor(config.colorPoint) : CRGB(18, 18, 18);
+    for (uint8_t k = 0; k < segment; k++) px(start + i * (segment + gap) + k, y, color);
+  }
+}
+
+// Wind above this speed replaces the sun/cloud icon (rain, snow and
+// thunderstorm stay more important).
+constexpr float WIND_ICON_KMH = 40.0f;
+
+const uint32_t *currentWeatherIcon() {
+  const int c = weather.weatherCode;
+  const bool night = isNightTime();
+  // fmaxf ignores a missing (NAN) value.
+  const float wind = fmaxf(weather.windSpeed, weather.windGust * 0.75f);
+  const bool windy = !isnan(wind) && wind >= WIND_ICON_KMH;
+  if (c >= 95) return icon_thunder;
+  if (c == 56 || c == 57 || c == 66 || c == 67) return icon_sleet;
+  if (c == 65 || c == 82) return icon_heavy_rain;
+  if ((c >= 51 && c <= 64) || (c >= 80 && c <= 81)) return icon_rain;
+  if ((c >= 71 && c <= 77) || (c >= 85 && c <= 86)) return icon_snow;
+  if (windy && c >= 0 && c <= 48) return icon_wind;
+  if (c == 0) return night ? icon_clear_night : icon_clear_day;
+  if (c == 1 || c == 2) return night ? icon_partly_night : icon_partly_day;
+  if (c == 3) return icon_cloud;
+  if (c == 45 || c == 48) return icon_fog;
+  return icon_unknown;
+}
+
+void drawWeatherIcon(int x, int y) {
+  drawBitmapIcon(x, y, currentWeatherIcon());
+}
+
+String weatherDescription(int c, bool en) {
+  if (c == 0) return en ? "Clear" : "Klar";
+  if (c == 1) return en ? "Mostly clear" : "Leicht bewölkt";
+  if (c == 2) return en ? "Partly cloudy" : "Teilweise bewölkt";
+  if (c == 3) return en ? "Overcast" : "Stark bewölkt";
+  if (c == 45 || c == 48) return en ? "Fog" : "Nebel";
+  if (c >= 51 && c <= 55) return en ? "Drizzle" : "Nieselregen";
+  if (c == 56 || c == 57 || c == 66 || c == 67) return en ? "Sleet" : "Schneeregen";
+  if (c == 61 || c == 80) return en ? "Light rain" : "Leichter Regen";
+  if (c == 63 || c == 81) return en ? "Rain" : "Regen";
+  if (c == 65 || c == 82) return en ? "Heavy rain" : "Starker Regen";
+  if (c >= 71 && c <= 77) return en ? "Snow" : "Schnee";
+  if (c == 85 || c == 86) return en ? "Snow showers" : "Schneeschauer";
+  if (c >= 95) return en ? "Thunderstorm" : "Gewitter";
+  return en ? "Weather" : "Wetter";
+}
+
+void drawTemperatureIcon(int x, int y) {
+  drawBitmapIcon(x, y, icon_temperature);
+}
+
+void drawBitmapIcon(int x, int y, const uint32_t *icon) {
+  for (uint8_t yy = 0; yy < WEATHER_ICON_H; yy++) {
+    for (uint8_t xx = 0; xx < WEATHER_ICON_W; xx++) {
+      const uint32_t color = pgm_read_dword(&icon[yy * WEATHER_ICON_W + xx]);
+      if (color == 0) continue;
+      px(x + xx, y + yy, CRGB((color >> 16) & 0xff, (color >> 8) & 0xff, color & 0xff));
+    }
+  }
+}
+
+void drawClockIcon(int x, int y, uint8_t frame) {
+  CRGB body = packedColor(config.colorPoint);
+  CRGB hand = packedColor(config.colorColon);
+  px(x + 3, y, body); px(x + 4, y, body);
+  px(x + 1, y + 1, body); px(x + 6, y + 1, body);
+  px(x, y + 3, body); px(x + 7, y + 3, body);
+  px(x, y + 4, body); px(x + 7, y + 4, body);
+  px(x + 1, y + 6, body); px(x + 6, y + 6, body);
+  px(x + 3, y + 7, body); px(x + 4, y + 7, body);
+  px(x + 4, y + 4, hand);
+  px(x + 4, y + 3, hand);
+  if (frame % 4 == 0) px(x + 5, y + 4, hand);
+  else if (frame % 4 == 1) px(x + 4, y + 5, hand);
+  else if (frame % 4 == 2) px(x + 3, y + 4, hand);
+  else px(x + 4, y + 2, hand);
+}
+
+void drawBootGreeting() {
+  const uint8_t frame = ((millis() - bootStarted) / 350) % 4;
+  forceTextGradient = true;
+  drawClockIcon(0, 0, frame);
+  drawText3x5(11, 1, "HELLO", packedColor(config.colorText));
+  forceTextGradient = false;
+}
+
+// Alternates WIFI, AP and the device id that ends the setup network's name.
+void drawSetupPrompt() {
+  const uint8_t frame = (millis() / 1600) % 3;
+  if (frame == 2) {
+    drawCenteredText3x5(1, deviceSuffix(), packedColor(config.colorText));
+    return;
+  }
+  drawClockIcon(0, 0, (millis() / 450) % 4);
+  drawText3x5(12, 1, frame == 1 ? "AP" : "WIFI", packedColor(config.colorText));
+}
+
+void drawResetNotice() {
+  const String text = pendingFactoryWipe ? String("RESET") : "RESET " + String(resetCountdownSeconds);
+  drawCenteredText3x5(1, text, CRGB(255, 40, 30));
+}
+
+String weekdayShort(const tm &t) {
+  static const char *daysDe[] = {"SO", "MO", "DI", "MI", "DO", "FR", "SA"};
+  static const char *daysEn[] = {"SU", "MO", "TU", "WE", "TH", "FR", "SA"};
+  const char **days = config.language == "en" ? daysEn : daysDe;
+  return days[t.tm_wday];
+}
+
+float displayTemperature(float celsius) {
+  if (isnan(celsius)) return NAN;
+  return config.temperatureUnit == 1 ? (celsius * 9.0f / 5.0f) + 32.0f : celsius;
+}
+
+String temperatureUnitText() {
+  return config.temperatureUnit == 1 ? "F" : "C";
+}
+
+String currentTemperatureText() {
+  if (isnan(weather.temperature)) return "--" + temperatureUnitText();
+  return String((int)round(displayTemperature(weather.temperature))) + temperatureUnitText();
+}
+
+String temperatureOverviewText() {
+  String text = currentTemperatureText();
+  if (!isnan(weather.temperatureMin) && !isnan(weather.temperatureMax)) {
+    text += " ";
+    text += String((int)round(displayTemperature(weather.temperatureMin)));
+    text += "-";
+    text += String((int)round(displayTemperature(weather.temperatureMax)));
+  }
+  return text;
+}
+
+void drawClockPage() {
+  struct tm timeinfo;
+  if (!getLocalTime(&timeinfo, 10)) {
+    drawText3x5(2, 1, "----", CRGB::Red);
+    return;
+  }
+  if (config.displayMode == 1) {
+    drawFixedClock(LEFT_VALUE_X + TEXT_LEFT_ICON_RIGHT_OFFSET_X, 1, timeinfo, true);
+    drawWeatherIcon(RIGHT_ICON_X + TEXT_LEFT_ICON_RIGHT_ICON_OFFSET_X, 0);
+  } else if (config.displayMode == 2) {
+    drawBigClockCentered(timeinfo);
+  } else {
+    drawWeatherIcon(LEFT_SLOT_X, 0);
+    drawFixedClock(VALUE_SLOT_X, 1, timeinfo, true);
+  }
+}
+
+void drawDatePage() {
+  struct tm timeinfo;
+  if (!getLocalTime(&timeinfo, 10)) {
+    drawText3x5(3, 1, "NO TIME", CRGB::Red);
+    return;
+  }
+  if (config.displayMode == 1) {
+    drawDateValue(LEFT_VALUE_X + DATE_PAGE_OFFSET_X + TEXT_LEFT_ICON_RIGHT_OFFSET_X, 1);
+    drawRightAlignedText(RIGHT_ICON_X + DATE_PAGE_OFFSET_X, 1, 9, weekdayShort(timeinfo), packedColor(config.colorWeekday));
+  } else if (config.displayMode == 2) {
+    drawLargeDateCentered(1);
+  } else {
+    drawText3x5(LEFT_SLOT_X + DATE_PAGE_OFFSET_X + TEXT_RIGHT_ICON_LEFT_WEEKDAY_OFFSET_X, 1, weekdayShort(timeinfo), packedColor(config.colorWeekday));
+    drawDateValue(VALUE_SLOT_X + DATE_PAGE_OFFSET_X, 1);
+  }
+}
+
+void drawWeatherPage() {
+  const String text = currentTemperatureText();
+  if (config.displayMode == 1) {
+    drawText3x5(LEFT_VALUE_X, 1, text, packedColor(config.colorText));
+    if (config.weatherIconEnabled) {
+      drawWeatherIcon(RIGHT_ICON_X + TEXT_LEFT_ICON_RIGHT_ICON_OFFSET_X, 0);
+    } else {
+      drawTemperatureIcon(RIGHT_ICON_X + TEXT_LEFT_ICON_RIGHT_ICON_OFFSET_X, 0);
+    }
+  } else if (config.displayMode == 2) {
+    drawBigTextCentered(1, text);
+  } else {
+    if (config.weatherIconEnabled) {
+      drawWeatherIcon(LEFT_SLOT_X, 0);
+    } else {
+      drawTemperatureIcon(LEFT_SLOT_X, 0);
+    }
+    drawRightAlignedText(VALUE_SLOT_X, 1, VALUE_SLOT_W, text, packedColor(config.colorText));
+  }
+}
+
+void drawTestPattern() {
+  for (uint8_t y = 0; y < config.height; y++) {
+    for (uint8_t x = 0; x < config.width; x++) {
+      px(x, y, CHSV((x * 255) / max<uint8_t>(1, config.width - 1), 220, 160));
+    }
+  }
+}
+
+uint32_t displayRenderInterval() {
+  if (alarmRinging() || pagesAnimating()) return 25;
+  if (chimeFlashActive(millis())) return 100;
+  if (millis() - bootStarted < BOOT_GREETING_MS || setupMode || config.colorGradientMode != 0) return 200;
+  return 1000;
+}
+
+// Hourly chime: a short frame around the matrix.
+static void drawChimeFrame() {
+  const CRGB color = packedColor(config.colorPoint);
+  for (int x = 0; x < config.width; x++) {
+    px(x, 0, color);
+    px(x, config.height - 1, color);
+  }
+  for (int y = 0; y < config.height; y++) {
+    px(0, y, color);
+    px(config.width - 1, y, color);
+  }
+}
+
+void renderDisplay() {
+  StateLock lock;
+  static uint8_t previousBrightness = 255;
+  static uint16_t previousCount = 0;
+  updateBrightnessForTime();
+  const bool resetNotice = pendingFactoryWipe || resetCountdownSeconds > 0;
+  const bool recoveryNotice = !resetNotice && recoveryCodeActive();
+  const bool ringing = alarmRinging();
+  // Keep reset countdown, recovery code and alarms readable even when dimmed or off.
+  if ((resetNotice || recoveryNotice || ringing) && FastLED.getBrightness() < 48) FastLED.setBrightness(48);
+  const uint8_t brightness = FastLED.getBrightness();
+  if (brightness == 0 && previousBrightness == 0) return;
+  fill_solid(leds, ledCount, CRGB::Black);
+  if (brightness == 0) {
+    // Send black once; leave the matrix latched off without further transfers.
+  } else if (resetNotice) {
+    drawResetNotice();
+  } else if (recoveryNotice) {
+    drawCenteredText3x5(1, recoveryCodeText(), CRGB(255, 190, 20));
+  } else if (millis() - bootStarted < BOOT_GREETING_MS) {
+    drawBootGreeting();
+  } else if (displayTest && static_cast<int32_t>(millis() - displayTestUntil) < 0) {
+    // The test pattern wins over the setup prompt so wiring can be checked
+    // before any Wi-Fi is configured.
+    drawTestPattern();
+  } else if (setupMode) {
+    drawSetupPrompt();
+  } else if (ringing) {
+    displayTest = false;
+    drawAlarm(millis());
+  } else {
+    displayTest = false;
+    pagesDraw(millis());
+    if (chimeFlashActive(millis())) drawChimeFrame();
+  }
+  // Qualified calls: FastLED 3.10.5 adds fl::memcmp/fl::memcpy, which argument-
+  // dependent lookup would otherwise find for CRGB arrays (ambiguous overload).
+  if (previousCount != ledCount || previousBrightness != brightness ||
+      ::memcmp(displayFrame, leds, ledCount * sizeof(CRGB)) != 0) {
+    FastLED.show();
+    ::memcpy(displayFrame, leds, ledCount * sizeof(CRGB));
+    previousBrightness = brightness;
+    previousCount = ledCount;
+  }
+}

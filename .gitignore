@@ -1,0 +1,24 @@
+.pio/
+
+# Keep editor recommendations, ignore local/generated VS Code state.
+.vscode/*
+!.vscode/extensions.json
+
+# Build and upload artifacts.
+/dist/
+.pioenvs/
+.piolibdeps/
+*.bin
+*.elf
+*.map
+data/*.gz
+
+# OS/editor noise.
+.DS_Store
+Thumbs.db
+*.tmp
+*.bak
+*.swp
+
+# Arduino IDE / arduino-cli export folder.
+/build/

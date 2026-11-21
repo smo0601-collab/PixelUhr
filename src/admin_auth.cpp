@@ -1,0 +1,324 @@
+#include <ArduinoJson.h>
+#include <esp_random.h>
+#include <mbedtls/md.h>
+#include <mbedtls/pkcs5.h>
+#include <mbedtls/sha256.h>
+#include <mbedtls/version.h>
+
+#include "app_state.h"
+#include "runtime_policy.h"
+
+// Admin passwords are stored as salted PBKDF2-HMAC-SHA256. The browser sends
+// Basic credentials with every API request, so the digest of the last verified
+// Authorization header is remembered until the credentials change; only new
+// headers pay for the key derivation. Failed attempts are throttled per client.
+
+static LoginThrottle loginThrottle;
+static uint8_t verifiedHeaderDigest[32];
+static bool verifiedHeaderValid = false;
+constexpr size_t ADMIN_SALT_BYTES = 16;
+constexpr size_t ADMIN_HASH_BYTES = 32;
+constexpr size_t MAX_AUTHORIZATION_HEADER_LENGTH = 256;
+
+static String toHex(const uint8_t *data, size_t length) {
+  static const char digits[] = "0123456789abcdef";
+  String out;
+  out.reserve(length * 2);
+  for (size_t i = 0; i < length; i++) {
+    out += digits[data[i] >> 4];
+    out += digits[data[i] & 0x0f];
+  }
+  return out;
+}
+
+static bool fromHex(const String &hex, uint8_t *out, size_t length) {
+  if (hex.length() != length * 2) return false;
+  for (size_t i = 0; i < length * 2; i++) {
+    const char c = hex[i];
+    uint8_t value;
+    if (c >= '0' && c <= '9') value = c - '0';
+    else if (c >= 'a' && c <= 'f') value = c - 'a' + 10;
+    else if (c >= 'A' && c <= 'F') value = c - 'A' + 10;
+    else return false;
+    out[i / 2] = (i % 2) ? (out[i / 2] | value) : static_cast<uint8_t>(value << 4);
+  }
+  return true;
+}
+
+static bool derivePasswordHash(const char *password, size_t length, const uint8_t *salt, uint8_t *key) {
+#if MBEDTLS_VERSION_NUMBER >= 0x03000000
+  // Arduino ESP32 3.x ships mbedTLS 3, which replaced the context-based API.
+  return mbedtls_pkcs5_pbkdf2_hmac_ext(MBEDTLS_MD_SHA256, reinterpret_cast<const unsigned char *>(password), length,
+                                       salt, ADMIN_SALT_BYTES, ADMIN_HASH_ITERATIONS, ADMIN_HASH_BYTES, key) == 0;
+#else
+  mbedtls_md_context_t context;
+  mbedtls_md_init(&context);
+  const bool ok = mbedtls_md_setup(&context, mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), 1) == 0 &&
+    mbedtls_pkcs5_pbkdf2_hmac(&context, reinterpret_cast<const unsigned char *>(password), length,
+                              salt, ADMIN_SALT_BYTES, ADMIN_HASH_ITERATIONS, ADMIN_HASH_BYTES, key) == 0;
+  mbedtls_md_free(&context);
+  return ok;
+#endif
+}
+
+static int sha256Digest(const unsigned char *input, size_t length, uint8_t *digest) {
+#if MBEDTLS_VERSION_NUMBER >= 0x03000000
+  return mbedtls_sha256(input, length, digest, 0);
+#else
+  return mbedtls_sha256_ret(input, length, digest, 0);
+#endif
+}
+
+void invalidateAdminAuthCache() {
+  verifiedHeaderValid = false;
+}
+
+bool adminPasswordIsDefault() {
+  return config.adminPasswordHash.isEmpty();
+}
+
+// Stores a new admin password. The factory default is kept as "no hash" so the
+// UI can keep reminding the owner to change it.
+bool setAdminPassword(const String &password) {
+  StateLock lock;
+  invalidateAdminAuthCache();
+  if (password == DEFAULT_ADMIN_PASSWORD) {
+    config.adminPasswordSalt = "";
+    config.adminPasswordHash = "";
+    return true;
+  }
+  uint8_t salt[ADMIN_SALT_BYTES];
+  uint8_t key[ADMIN_HASH_BYTES];
+  esp_fill_random(salt, sizeof(salt));
+  if (!derivePasswordHash(password.c_str(), password.length(), salt, key)) return false;
+  config.adminPasswordSalt = toHex(salt, sizeof(salt));
+  config.adminPasswordHash = toHex(key, sizeof(key));
+  return true;
+}
+
+void resetAdminCredentials() {
+  StateLock lock;
+  invalidateAdminAuthCache();
+  config.adminUsername = DEFAULT_ADMIN_USERNAME;
+  config.adminPasswordSalt = "";
+  config.adminPasswordHash = "";
+}
+
+// Converts a plain password saved by firmware 0.1.17 or older.
+bool migratePlainAdminPassword(const String &password) {
+  if (password.length() < MIN_ADMIN_PASSWORD_LENGTH || password.length() > MAX_ADMIN_PASSWORD_LENGTH) {
+    config.adminPasswordSalt = "";
+    config.adminPasswordHash = "";
+    return true;
+  }
+  return setAdminPassword(password);
+}
+
+bool adminCredentialsValid() {
+  if (config.adminPasswordHash.isEmpty()) return config.adminPasswordSalt.isEmpty();
+  uint8_t scratch[ADMIN_HASH_BYTES];
+  return fromHex(config.adminPasswordSalt, scratch, ADMIN_SALT_BYTES) &&
+    fromHex(config.adminPasswordHash, scratch, ADMIN_HASH_BYTES);
+}
+
+static bool passwordMatches(const char *password) {
+  const size_t length = strlen(password);
+  if (config.adminPasswordHash.isEmpty()) {
+    const size_t expected = strlen(DEFAULT_ADMIN_PASSWORD);
+    return length == expected && constantTimeEquals(password, DEFAULT_ADMIN_PASSWORD, expected);
+  }
+  uint8_t salt[ADMIN_SALT_BYTES];
+  uint8_t stored[ADMIN_HASH_BYTES];
+  uint8_t candidate[ADMIN_HASH_BYTES];
+  if (!fromHex(config.adminPasswordSalt, salt, sizeof(salt)) ||
+      !fromHex(config.adminPasswordHash, stored, sizeof(stored)) ||
+      !derivePasswordHash(password, length, salt, candidate)) {
+    return false;
+  }
+  return constantTimeEquals(candidate, stored, sizeof(stored));
+}
+
+static bool authorizationValid(const String &header) {
+  if (header.isEmpty() || header.length() > MAX_AUTHORIZATION_HEADER_LENGTH) return false;
+  uint8_t digest[32];
+  const bool digestOk = sha256Digest(reinterpret_cast<const unsigned char *>(header.c_str()),
+                                           header.length(), digest) == 0;
+  if (digestOk && verifiedHeaderValid && constantTimeEquals(digest, verifiedHeaderDigest, sizeof(digest))) return true;
+
+  BasicCredentials credentials;
+  if (!parseBasicAuthorization(header.c_str(), credentials)) return false;
+  const bool valid = config.adminUsername.equals(credentials.username) && passwordMatches(credentials.password);
+  memset(&credentials, 0, sizeof(credentials));
+  if (valid && digestOk) {
+    memcpy(verifiedHeaderDigest, digest, sizeof(digest));
+    verifiedHeaderValid = true;
+  }
+  return valid;
+}
+
+static String authorizationHeader(AsyncWebServerRequest *request) {
+  const AsyncWebHeader *header = request->getHeader("Authorization");
+  return header ? header->value() : String();
+}
+
+static uint32_t clientAddress(AsyncWebServerRequest *request) {
+  AsyncClient *client = request->client();
+  return client ? static_cast<uint32_t>(client->remoteIP()) : 0;
+}
+
+// Side-effect free check for upload chunks.
+bool isAdminAuthorized(AsyncWebServerRequest *request) {
+  StateLock lock;
+  return authorizationValid(authorizationHeader(request));
+}
+
+static void sendRetryLater(AsyncWebServerRequest *request, uint32_t retryMs, const char *message) {
+  const uint32_t seconds = (retryMs + 999) / 1000;
+  JsonDocument doc;
+  doc["ok"] = false;
+  doc["error"] = message;
+  doc["retryAfterSeconds"] = seconds;
+  String body;
+  serializeJson(doc, body);
+  AsyncWebServerResponse *response = request->beginResponse(429, "application/json", body);
+  response->addHeader("Retry-After", String(seconds));
+  request->send(response);
+}
+
+bool requireAdminAuth(AsyncWebServerRequest *request) {
+  StateLock lock;
+  const uint32_t client = clientAddress(request);
+  const uint32_t now = millis();
+  const uint32_t retryMs = loginThrottle.retryAfterMs(client, now);
+  if (retryMs) {
+    sendRetryLater(request, retryMs, "Zu viele Fehlversuche. Bitte später erneut versuchen.");
+    return false;
+  }
+  const String header = authorizationHeader(request);
+  if (authorizationValid(header)) {
+    loginThrottle.recordSuccess(client);
+    return true;
+  }
+  if (!header.isEmpty()) loginThrottle.recordFailure(client, now);
+  sendJsonError(request, 401, "Admin-Anmeldung erforderlich.");
+  return false;
+}
+
+// Password recovery without login. Knowing the code shown on the matrix proves
+// physical access to the clock; Wi-Fi and settings stay untouched. Wrong codes
+// count towards the login throttle, a code allows five attempts and expires
+// after five minutes, and a new code can be requested every 30 seconds.
+constexpr uint32_t RECOVERY_CODE_MS = 300000;
+constexpr uint32_t RECOVERY_REQUEST_GAP_MS = 30000;
+constexpr uint8_t RECOVERY_MAX_FAILURES = 5;
+static uint32_t recoveryCode = 0;
+static uint32_t recoveryUntil = 0;
+static uint32_t recoveryRequestedAt = 0;
+static bool recoveryRequested = false;
+static uint8_t recoveryFailures = 0;
+
+bool recoveryCodeActive() {
+  StateLock lock;
+  if (recoveryCode && deadlineReached(millis(), recoveryUntil)) {
+    recoveryCode = 0;
+    lastRender = 0;
+  }
+  return recoveryCode != 0;
+}
+
+String recoveryCodeText() {
+  StateLock lock;
+  char text[8];
+  snprintf(text, sizeof(text), "%06lu", static_cast<unsigned long>(recoveryCode));
+  return String(text);
+}
+
+static String postParam(AsyncWebServerRequest *request, const char *name) {
+  return request->hasParam(name, true) ? request->getParam(name, true)->value() : String();
+}
+
+static void sendRecoveryJson(AsyncWebServerRequest *request, JsonDocument &doc) {
+  AsyncResponseStream *response = request->beginResponseStream("application/json");
+  response->addHeader("Cache-Control", "no-store");
+  serializeJson(doc, *response);
+  request->send(response);
+}
+
+void handleRecoveryStart(AsyncWebServerRequest *request) {
+  StateLock lock;
+  const uint32_t now = millis();
+  const uint32_t retryMs = loginThrottle.retryAfterMs(clientAddress(request), now);
+  if (retryMs) {
+    sendRetryLater(request, retryMs, "Zu viele Fehlversuche. Bitte später erneut versuchen.");
+    return;
+  }
+  if (!recoveryCodeActive()) {
+    if (recoveryRequested && now - recoveryRequestedAt < RECOVERY_REQUEST_GAP_MS) {
+      sendRetryLater(request, RECOVERY_REQUEST_GAP_MS - (now - recoveryRequestedAt), "Bitte kurz warten, bevor du einen neuen Code anforderst.");
+      return;
+    }
+    recoveryCode = 100000 + esp_random() % 900000;
+    recoveryUntil = now + RECOVERY_CODE_MS;
+    recoveryRequestedAt = now;
+    recoveryRequested = true;
+    recoveryFailures = 0;
+    lastRender = 0;
+    Serial.println("Password recovery code shown on the matrix");
+  }
+  JsonDocument doc;
+  doc["ok"] = true;
+  doc["expiresInSeconds"] = (recoveryUntil - now) / 1000;
+  sendRecoveryJson(request, doc);
+}
+
+void handleRecoveryFinish(AsyncWebServerRequest *request) {
+  StateLock lock;
+  const uint32_t client = clientAddress(request);
+  const uint32_t now = millis();
+  const uint32_t retryMs = loginThrottle.retryAfterMs(client, now);
+  if (retryMs) {
+    sendRetryLater(request, retryMs, "Zu viele Fehlversuche. Bitte später erneut versuchen.");
+    return;
+  }
+  if (!recoveryCodeActive()) {
+    sendJsonError(request, 400, "Kein gültiger Code. Bitte einen neuen Code anfordern.");
+    return;
+  }
+  const String password = postParam(request, "adminPassword");
+  if (password.length() < MIN_ADMIN_PASSWORD_LENGTH) {
+    sendJsonError(request, 400, "Das Admin-Passwort muss mindestens 8 Zeichen lang sein.");
+    return;
+  }
+  if (password.length() > MAX_ADMIN_PASSWORD_LENGTH) {
+    sendJsonError(request, 400, "Das Admin-Passwort darf höchstens 64 Zeichen lang sein.");
+    return;
+  }
+  if (password == DEFAULT_ADMIN_PASSWORD) {
+    sendJsonError(request, 400, "Bitte ein anderes Passwort als das Standardpasswort wählen.");
+    return;
+  }
+  String code = postParam(request, "code");
+  code.trim();
+  const String expected = recoveryCodeText();
+  if (code.length() != expected.length() || !constantTimeEquals(code.c_str(), expected.c_str(), expected.length())) {
+    loginThrottle.recordFailure(client, now);
+    if (++recoveryFailures >= RECOVERY_MAX_FAILURES) {
+      recoveryCode = 0;
+      lastRender = 0;
+    }
+    sendJsonError(request, 403, "Der Code stimmt nicht.");
+    return;
+  }
+  if (!setAdminPassword(password)) {
+    sendJsonError(request, 500, "Admin-Passwort konnte nicht gespeichert werden.");
+    return;
+  }
+  saveConfig();
+  recoveryCode = 0;
+  lastRender = 0;
+  loginThrottle.recordSuccess(client);
+  JsonDocument doc;
+  doc["ok"] = true;
+  doc["adminUsername"] = config.adminUsername;
+  sendRecoveryJson(request, doc);
+}
