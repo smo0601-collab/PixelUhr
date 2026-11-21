@@ -39,9 +39,7 @@ jobs:
         run: pio run
 
       - name: Embedded web interface is up to date
-        run: |
-          python3 tools/embed_web.py
-          git diff --exit-code src/web_assets.h
+        run: python3 tools/embed_web.py --check
 
       - name: Firmware regression tests
         run: |

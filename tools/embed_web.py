@@ -5,12 +5,14 @@ Every file is stored gzip-compressed (deterministic, level 9) and served with
 "Content-Encoding: gzip". Run it after changing files in data/:
 
     python3 tools/embed_web.py
+    python3 tools/embed_web.py --check   # CI: fails when the header is stale
 
 PlatformIO runs it automatically before each build (scripts/embed_web_pio.py).
 The generated header is committed, so the Arduino IDE needs no extra step.
 """
 import gzip
 import hashlib
+import re
 import sys
 from pathlib import Path
 
@@ -25,7 +27,35 @@ MIME = {
 }
 
 
+def embedded_files(header: Path) -> dict:
+    """Decompressed content of every file in an existing web_assets.h."""
+    if not header.exists():
+        return {}
+    text = header.read_text("utf-8")
+    arrays = {
+        m.group(1): bytes(int(x, 16) for x in re.findall(r"0x([0-9a-f]{2})", m.group(2)))
+        for m in re.finditer(r"static const uint8_t (WEB_ASSET_\d+)\[\] = \{(.*?)\};", text, re.S)
+    }
+    result = {}
+    for path, mime, name in re.findall(r'\{"/([^"]+)", "([^"]+)", (WEB_ASSET_\d+),', text):
+        result[path] = (mime, gzip.decompress(arrays[name]))
+    return result
+
+
+def source_files(data_dir: Path) -> dict:
+    files = sorted(p for p in data_dir.iterdir() if p.is_file() and not p.name.endswith(".gz"))
+    return {p.name: (MIME.get(p.suffix.lower(), "application/octet-stream"), p.read_bytes()) for p in files}
+
+
+def up_to_date(project: Path) -> bool:
+    """True when web_assets.h holds exactly the files in data/. Compares the
+    decompressed content: gzip bytes differ between zlib versions."""
+    return embedded_files(project / "src" / "web_assets.h") == source_files(project / "data")
+
+
 def build(project: Path) -> bool:
+    if up_to_date(project):
+        return False
     data_dir = project / "data"
     target = project / "src" / "web_assets.h"
     files = sorted(p for p in data_dir.iterdir() if p.is_file() and not p.name.endswith(".gz"))
@@ -71,6 +101,11 @@ def build(project: Path) -> bool:
 
 
 if __name__ == "__main__":
-    root = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(__file__).resolve().parent.parent
+    args = [a for a in sys.argv[1:] if a != "--check"]
+    root = Path(args[0]) if args else Path(__file__).resolve().parent.parent
+    if "--check" in sys.argv:
+        ok = up_to_date(root)
+        print("src/web_assets.h " + ("matches data/" if ok else "is out of date: run python3 tools/embed_web.py"))
+        sys.exit(0 if ok else 1)
     changed = build(root)
     print("src/web_assets.h " + ("updated" if changed else "unchanged"))
