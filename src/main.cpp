@@ -37,6 +37,7 @@ void setup() {
 void loop() {
   serviceSetupAp();
   serviceResetButton();
+  bool frameReady = false;
   {
     StateLock lock;
     const uint32_t now = millis();
@@ -49,10 +50,11 @@ void loop() {
     serviceAlarms(now);
     if (!lastRender || now - lastRender >= displayRenderInterval()) {
       lastRender = now;
-      renderDisplay();
+      frameReady = prepareDisplayFrame();
     }
   }
-  // Give the idle task and Wi-Fi power management time between display checks;
-  // scrolling texts and animations need a faster frame rate.
-  delay(displayRenderInterval() < 100 ? 5 : 20);
+  // LED output happens outside the state lock (see showDisplayFrame()).
+  if (frameReady) showDisplayFrame();
+  // Always leave Wi-Fi, the web server and the idle task time between frames.
+  delay(10);
 }

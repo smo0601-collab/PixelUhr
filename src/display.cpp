@@ -586,7 +586,9 @@ void drawTestPattern() {
 }
 
 uint32_t displayRenderInterval() {
-  if (alarmRinging() || pagesAnimating()) return 25;
+  if (alarmRinging()) return 50;
+  const uint32_t pages = pagesFrameInterval();
+  if (pages < 1000) return pages;
   if (chimeFlashActive(millis())) return 100;
   if (millis() - bootStarted < BOOT_GREETING_MS || setupMode || config.colorGradientMode != 0) return 200;
   return 1000;
@@ -605,7 +607,17 @@ static void drawChimeFrame() {
   }
 }
 
+// Sends the prepared frame. Runs without the state lock, so web requests and
+// the network worker are never blocked while the LED data goes out.
+void showDisplayFrame() {
+  FastLED.show();
+}
+
 void renderDisplay() {
+  if (prepareDisplayFrame()) showDisplayFrame();
+}
+
+bool prepareDisplayFrame() {
   StateLock lock;
   static uint8_t previousBrightness = 255;
   static uint16_t previousCount = 0;
@@ -616,7 +628,7 @@ void renderDisplay() {
   // Keep reset countdown, recovery code and alarms readable even when dimmed or off.
   if ((resetNotice || recoveryNotice || ringing) && FastLED.getBrightness() < 48) FastLED.setBrightness(48);
   const uint8_t brightness = FastLED.getBrightness();
-  if (brightness == 0 && previousBrightness == 0) return;
+  if (brightness == 0 && previousBrightness == 0) return false;
   fill_solid(leds, ledCount, CRGB::Black);
   if (brightness == 0) {
     // Send black once; leave the matrix latched off without further transfers.
@@ -644,9 +656,10 @@ void renderDisplay() {
   // dependent lookup would otherwise find for CRGB arrays (ambiguous overload).
   if (previousCount != ledCount || previousBrightness != brightness ||
       ::memcmp(displayFrame, leds, ledCount * sizeof(CRGB)) != 0) {
-    FastLED.show();
     ::memcpy(displayFrame, leds, ledCount * sizeof(CRGB));
     previousBrightness = brightness;
     previousCount = ledCount;
+    return true;
   }
+  return false;
 }

@@ -1,5 +1,18 @@
 # Änderungen
 
+## PixelUhr 1.0.1 (Firmware 1.0.1, Weboberfläche 1.0.0)
+
+### Behoben
+
+- Uhr war nicht mehr erreichbar und das WLAN brach ab, sobald ein Lauftext mit Regenbogenfarben (oder ein
+  anderer Farbeffekt) lief. Ursache: Die Matrix wurde 40-mal pro Sekunde komplett neu gesendet, jeweils mit
+  gesperrtem Zustand. Webserver und WLAN kamen kaum noch zum Zug.
+  - Farbeffekte ohne Bewegung (Regenbogen, Konfetti, Farbverlauf) laufen jetzt mit 10 Bildern pro Sekunde,
+    Scrollen mit 33, Animationen mit 20, der Wecker mit 20.
+  - Die LED-Ausgabe läuft außerhalb der Sperre, Webanfragen werden dadurch nicht mehr blockiert.
+  - Die Hauptschleife gibt WLAN und Webserver zwischen zwei Bildern immer mindestens 10 ms Zeit.
+
+
 ## PixelUhr 1.0.0 (Firmware 1.0.0, Weboberfläche 1.0.0)
 
 Erste Version von PixelUhr auf Basis von PixelClock 0.1.22 (Firmware) / 0.1.21 (Weboberfläche).

@@ -13,6 +13,10 @@
 
 namespace {
 
+constexpr uint32_t SCROLL_FRAME_MS = 30;
+constexpr uint32_t EFFECT_FRAME_MS = 100;
+constexpr uint32_t ANIMATION_FRAME_MS = 50;
+
 struct Message {
   String text;
   uint32_t color = 0;          // 0 = text colour of the display settings
@@ -40,10 +44,17 @@ class Player {
   void clear() { list_.clear(); index_ = 0; }
   bool empty() const { return list_.empty(); }
   bool done() const { return index_ >= list_.size(); }
-  bool animating() const {
-    if (done()) return false;
+  bool animating() const { return frameInterval() < 1000; }
+
+  // Scrolling needs a smooth frame rate; colour-only effects (rainbow,
+  // confetti, gradients) look the same at 10 frames per second and leave the
+  // CPU and Wi-Fi far more time.
+  uint32_t frameInterval() const {
+    if (done()) return 1000;
     const Message &m = list_[index_];
-    return scrolling_ || m.rainbow || m.confetti || config.colorGradientMode != 0;
+    if (scrolling_) return SCROLL_FRAME_MS;
+    if (m.rainbow || m.confetti || config.colorGradientMode != 0) return EFFECT_FRAME_MS;
+    return 1000;
   }
 
   // Draws the current message; advances to the next one when it is finished.
@@ -223,7 +234,7 @@ int textTopY(uint8_t font) {
 
 int drawTextClipped(const char *text, int x, int y, uint8_t font, CRGB color, int clipLeft, int clipRight,
                     bool rainbow) {
-  const uint8_t hueBase = static_cast<uint8_t>(millis() / 12);
+  const uint8_t hueBase = static_cast<uint8_t>(millis() / 40);
   return textlayout::drawText(text, x, y, font, [&](int px_, int py_) {
     if (px_ < clipLeft || px_ >= clipRight) return;
     if (rainbow) px(px_, py_, CHSV(hueBase + px_ * 8, 230, 255));
@@ -869,6 +880,14 @@ void pagesPreviewText(const ScrollText &text) {
   previewPlayer.load(std::move(list), millis());
   previewUntil = millis() + 30000;
   lastRender = 0;
+}
+
+uint32_t pagesFrameInterval() {
+  if (!previewPlayer.done()) return previewPlayer.frameInterval();
+  if (permanentActive) return permanentPlayer.frameInterval();
+  if (activeType == PAGE_ANIMATION) return ANIMATION_FRAME_MS;
+  if (activeType >= 0 && !isClassic(activeType)) return pagePlayer.frameInterval();
+  return 1000;
 }
 
 bool pagesAnimating() {

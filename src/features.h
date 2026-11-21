@@ -173,6 +173,7 @@ void pagesReset();
 void pagesPreviewText(const ScrollText &text);  // shows a text once, right now
 bool pagesDraw(uint32_t now);      // returns true while an animation runs
 bool pagesAnimating();
+uint32_t pagesFrameInterval();  // ms between frames the current page needs
 uint8_t pagesCurrentType();
 String expandPlaceholders(const String &text);
 int32_t localToday(int *wday = nullptr, int *minuteOfDay = nullptr);
